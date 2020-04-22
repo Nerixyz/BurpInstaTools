@@ -5,7 +5,12 @@ import com.google.gson.*;
 import javax.swing.*;
 import java.awt.*;
 import java.io.PrintStream;
+import java.lang.reflect.Array;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
 
 public class IgMessageTab implements IMessageEditorTab {
 
@@ -42,18 +47,19 @@ public class IgMessageTab implements IMessageEditorTab {
         try {
             if (isRequest) {
                 IHttpService service = null;
-                try{
+                try {
                     service = controller.getHttpService();
-                }catch(Exception e) {
+                } catch (Exception e) {
                     new PrintStream(callbacks.getStdout()).println("Exception thrown in getHttpService()");
                 }
                 IRequestInfo info = helpers.analyzeRequest(service, content);
-                return info.getContentType() == IRequestInfo.CONTENT_TYPE_URL_ENCODED && info.getUrl().getHost().equals("i.instagram.com");
+                return (info.getContentType() == IRequestInfo.CONTENT_TYPE_URL_ENCODED && info.getUrl().getHost().equals("i.instagram.com")) ||
+                        (info.getUrl().getHost().equals("graph.instagram.com"));
             } else {
                 IResponseInfo info = helpers.analyzeResponse(content);
                 return info.getInferredMimeType().equals("JSON");
             }
-        }catch(Exception e) {
+        } catch (Exception e) {
             e.printStackTrace(new PrintStream(callbacks.getStderr()));
             new PrintStream(callbacks.getStdout()).println("Exception thrown in isEnabled()");
         }
@@ -65,21 +71,31 @@ public class IgMessageTab implements IMessageEditorTab {
         try {
             this.message = content;
             if (content == null || content.length == 0) {
+                assertOrCreateTextEditor();
+                textEditor.setEditable(editable);
+                textEditor.setText("no content".getBytes());
+                tabComponent.repaint();
                 return;
             }
 
             if (isRequest) {
-                this.handleRequest(content, helpers.analyzeRequest(content));
+                var requestInfo = helpers.analyzeRequest(controller.getHttpService(), content);
+                if (requestInfo.getUrl().getHost().equals("graph.instagram.com")) {
+                    this.handleGraphRequest(content, requestInfo);
+                } else {
+                    this.handleApiRequest(content, requestInfo);
+                }
             } else {
                 this.handleResponse(content, helpers.analyzeResponse(content));
             }
             tabComponent.repaint();
-        }catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace(new PrintStream(callbacks.getStderr()));
             new PrintStream(callbacks.getStdout()).println("Exception thrown in setMessage()");
         }
     }
-    private void handleRequest(byte[] content, IRequestInfo request) {
+
+    private void handleApiRequest(byte[] content, IRequestInfo request) {
         try {
             byte[] bodyData = Arrays.copyOfRange(content, request.getBodyOffset(), content.length);
             String[][] requestPairs = null;
@@ -102,13 +118,13 @@ public class IgMessageTab implements IMessageEditorTab {
                 }
             }
             String json = "";
-            var gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().serializeNulls().create();
+            Gson gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().serializeNulls().create();
             if (signedBody != null) {
                 json = signature + "\n" + gson.toJson(JsonParser.parseString(signedBody));
 
             } else if (requestPairs != null) {
                 var obj = new JsonObject();
-                for(var pair : requestPairs) {
+                for (var pair : requestPairs) {
                     obj.add(pair[0], new JsonPrimitive(pair[1]));
                 }
                 json = gson.toJson(obj);
@@ -117,14 +133,88 @@ public class IgMessageTab implements IMessageEditorTab {
             textEditor.setEditable(editable);
             textEditor.setText(json.getBytes());
 
-        }catch(Exception e) {
+        } catch (Exception e) {
             e.printStackTrace(new PrintStream(callbacks.getStderr()));
-            new PrintStream(callbacks.getStdout()).println("Exception thrown in handleRequest()\n\tPath: " + request.getUrl().getPath());
+            new PrintStream(callbacks.getStdout()).println("Exception thrown in handleApiRequest()\n\tPath: " + request.getUrl().getPath());
         }
     }
 
+    private void handleGraphRequest(byte[] content, IRequestInfo request) {
+        try {
+            if (request.getContentType() == IRequestInfo.CONTENT_TYPE_MULTIPART) {
+                var cmsgParam = findParameterInBody(request, "cmsg");
+                if (cmsgParam == null) {
+                    assertOrCreateTextEditor();
+                    textEditor.setEditable(editable);
+                    textEditor.setText("Could not find 'cmsg'".getBytes());
+                    return;
+                }
+                assertOrCreateTextEditor();
+                textEditor.setEditable(editable);
+                textEditor.setText(new GsonBuilder().setPrettyPrinting()
+                        .disableHtmlEscaping()
+                        .serializeNulls()
+                        .create()
+                        .toJson(JsonParser.parseString(new String(inflate(Arrays.copyOfRange(content, cmsgParam.getValueStart(), cmsgParam.getValueEnd()),
+                                true),
+                                StandardCharsets.UTF_8)))
+                        .getBytes());
+            } else {
+                var messageParam = findParameterInBody(request, "message");
+                if (messageParam == null) {
+                    assertOrCreateTextEditor();
+                    textEditor.setEditable(editable);
+                    textEditor.setText("Could not find 'message'".getBytes());
+                    return;
+                }
+                assertOrCreateTextEditor();
+                textEditor.setEditable(editable);
+                textEditor.setText(new GsonBuilder().setPrettyPrinting()
+                        .disableHtmlEscaping()
+                        .serializeNulls()
+                        .create()
+                        .toJson(JsonParser.parseString(new String(inflate(helpers.base64Decode(helpers.urlDecode(Arrays.copyOfRange(content,
+                                messageParam.getValueStart(),
+                                messageParam.getValueEnd()))), false),
+                                StandardCharsets.UTF_8)))
+                        .getBytes());
+            }
+        } catch (Exception e) {
+            e.printStackTrace(new PrintStream(callbacks.getStderr()));
+            new PrintStream(callbacks.getStdout()).println("Exception thrown in handleGraphRequest()\n\tPath: " + request.getUrl().getPath());
+        }
+    }
+
+    private IParameter findParameterInBody(IRequestInfo request, String name) {
+        return request.getParameters()
+                .stream()
+                .filter(x -> x.getType() == IParameter.PARAM_BODY && x.getName().equals(name))
+                .findFirst().orElse(null);
+    }
+
+    private byte[] inflate(byte[] data, boolean raw) throws DataFormatException {
+        var inflater = new Inflater(raw);
+        inflater.setInput(data);
+        var buffers = new ArrayList<byte[]>();
+        var len = 0;
+        while (inflater.getRemaining() > 0) {
+            var current = new byte[1024];
+            len += inflater.inflate(current);
+            buffers.add(current);
+        }
+        var finalBuf = new byte[len];
+        var offset = 0;
+        for (var buffer : buffers) {
+            var copyLen = Math.min(len - offset, buffer.length);
+            System.arraycopy(buffer, 0, finalBuf, offset, copyLen);
+            offset += copyLen;
+        }
+        return finalBuf;
+    }
+
+
     private void assertOrCreateTextEditor() {
-        if(textEditor == null) {
+        if (textEditor == null) {
             textEditor = callbacks.createTextEditor();
             tabComponent.add(textEditor.getComponent());
         }
@@ -134,7 +224,7 @@ public class IgMessageTab implements IMessageEditorTab {
         var encPairs = body.split("&");
         var reqData = new String[encPairs.length][2];
         int i = 0;
-        for(var pair : encPairs) {
+        for (var pair : encPairs) {
             var parts = pair.split("=");
             reqData[i] = parts;
             i++;
