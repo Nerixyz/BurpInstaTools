@@ -1,4 +1,26 @@
+/**
+ *
+ *          SPOILER:
+ *      I don't actually know gradle,
+ *      IntelliJ basically highlights everything but it somehow works.
+ *      So If you know gradle and have suggestions, suggest them.
+ *
+ *
+ */
+
+
 apply plugin: 'java'
+apply plugin: 'kotlin'
+
+buildscript {
+    ext.kotlin_version = '1.3.72'
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
 
 repositories {
     mavenCentral()
@@ -7,6 +29,7 @@ repositories {
 dependencies {
     compile 'net.portswigger.burp.extender:burp-extender-api:1.7.13'
     compile 'com.google.code.gson:gson:2.8.6'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
 }
 
 sourceSets {
@@ -17,8 +40,24 @@ sourceSets {
     }
 }
 
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+
 task fatJar(type: Jar) {
-    baseName = project.name + '-all'
-    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
-    with jar
+    archiveClassifier = 'all'
+
+    from sourceSets.main.output
+
+    dependsOn configurations.runtimeClasspath
+    from {
+        configurations.runtimeClasspath.findAll { it.name.endsWith('jar') }.collect { zipTree(it) }
+    }
 }
