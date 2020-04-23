@@ -18,8 +18,8 @@ class IgApiDecoder : MessageDecoder("i.instagram.com") {
             val signedInfo = request.parameters.findBodyParam("signed_body")
             if (signedInfo != null && SIGNATURE_REGEX.matches(signedInfo.value)) {
                 val (signature, body) = SIGNATURE_REGEX.find(signedInfo.value)!!.destructured
-                requestParts.add(signature)
-                requestParts.add(body.jsonPrettyPrint())
+                requestParts.add(signature.urlDecode())
+                requestParts.add(body.urlDecode().jsonPrettyPrint())
             }
             requestParts.add(request.parameters.streamAllBodyParams().filter { it.name != "signed_body" }.toJson())
         } else {
