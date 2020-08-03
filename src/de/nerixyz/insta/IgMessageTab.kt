@@ -49,6 +49,7 @@ class IgMessageTab internal constructor(private val controller: IMessageEditorCo
     }
 
     override fun setMessage(content: ByteArray?, isRequest: Boolean) {
+        var url = "<unknown>"
         try {
             if (content == null) {
                 setText("No content/message.")
@@ -56,6 +57,7 @@ class IgMessageTab internal constructor(private val controller: IMessageEditorCo
             }
             if (isRequest) {
                 val requestInfo = helpers.analyzeRequest(controller.httpService, content)
+                url = requestInfo.url.toString()
                 val decoder = decoders.stream().filter { it.match(requestInfo.url) }.findFirst().orElse(null)
                 if (decoder == null) {
                     setText("No decoder.")
@@ -67,7 +69,7 @@ class IgMessageTab internal constructor(private val controller: IMessageEditorCo
             }
         } catch (e: Exception) {
             e.printStackTrace(PrintStream(callbacks.stderr))
-            PrintStream(callbacks.stdout).println("Exception thrown in setMessage() - ${e.message}")
+            PrintStream(callbacks.stdout).println("Exception thrown in setMessage() URL: $url - ${e.message}")
         }
     }
 
