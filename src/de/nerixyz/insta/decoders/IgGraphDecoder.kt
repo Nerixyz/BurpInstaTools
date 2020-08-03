@@ -13,13 +13,19 @@ class IgGraphDecoder : MessageDecoder("graph.instagram.com") {
                     .jsonPrettyPrint()
         } else {
             val messageParam = request.parameters.findBodyParam("message") ?: return "Could not find 'message'"
-            return rawData.copyOfRange(messageParam.valueStart, messageParam.valueEnd)
-                    .utf8()
-                    .urlDecode()
-                    .base64Decode()
-                    .inflate(false)
-                    .utf8()
-                    .jsonPrettyPrint()
+            return if(request.parameters.findBodyParam("compressed")?.value ==  "1") {
+                rawData.copyOfRange(messageParam.valueStart, messageParam.valueEnd)
+                        .utf8()
+                        .urlDecode()
+                        .base64Decode()
+                        .inflate(false)
+                        .utf8()
+                        .jsonPrettyPrint()
+            } else {
+                messageParam.value
+                        .urlDecode()
+                        .jsonPrettyPrint()
+            }
         }
     }
 }
