@@ -5,6 +5,7 @@ import de.nerixyz.insta.decoders.MessageDecoder
 import java.awt.Component
 import java.awt.GridLayout
 import java.io.PrintStream
+import java.net.URL
 import javax.swing.JPanel
 
 class IgMessageTab internal constructor(private val controller: IMessageEditorController,
@@ -35,7 +36,7 @@ class IgMessageTab internal constructor(private val controller: IMessageEditorCo
         try {
             val httpService = controller.httpService
             val url = if (isRequest) {
-                helpers.analyzeRequest(httpService, content).url
+                helpers.analyzeRequest(httpService, content).url ?: URL("http", "unknown", "unknown")
             } else {
                 val response = helpers.analyzeResponse(content)
                 return response.inferredMimeType == "JSON"

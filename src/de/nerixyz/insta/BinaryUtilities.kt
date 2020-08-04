@@ -1,9 +1,12 @@
 package de.nerixyz.insta
 
+import java.io.ByteArrayInputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.zip.DataFormatException
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import java.util.zip.Inflater
 import kotlin.math.min
 
@@ -26,6 +29,10 @@ fun ByteArray.inflate(raw: Boolean): ByteArray {
         offset += copyLen
     }
     return finalBuf
+}
+
+fun ByteArray.gzipDecode(): ByteArray {
+    return GZIPInputStream(ByteArrayInputStream(this)).readAllBytes()
 }
 
 fun String.urlDecode(): String = URLDecoder.decode(this, StandardCharsets.UTF_8)
