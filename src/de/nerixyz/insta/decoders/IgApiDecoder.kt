@@ -2,6 +2,7 @@ package de.nerixyz.insta.decoders
 
 import burp.*
 import de.nerixyz.insta.*
+import java.net.URL
 
 /**
  * match a Signature (hex.{data})
@@ -12,6 +13,9 @@ private val SIGNATURE_REGEX = Regex("^([a-fA-F\\d]+|SIGNATURE)\\.(.+)\$")
  * Decodes everything on i.instagram.com
  */
 class IgApiDecoder : MessageDecoder("i.instagram.com") {
+    // support both i.instagram and b.i.instagram
+    override fun match(url: URL): Boolean = url.host.endsWith(domain)
+
     override fun onRequest(request: IRequestInfo, rawData: ByteArray): String? {
         var parameters = request.parameters
         if(request.headers.contains("Content-Encoding: gzip")) {
